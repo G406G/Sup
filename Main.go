@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/net/http2"
+	// Removed the unused import: "golang.org/x/net/http2"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 
 var userAgents []string
 var referers []string
-var methodsHTTP = []string{"GET", "POST", "HEAD"} // Reverted to the older, simpler list
+var methodsHTTP = []string{"GET", "POST", "HEAD"} 
 var proxies []string
 
 func init() {
@@ -604,7 +604,7 @@ func runAttack() {
 		}
 
 	case "udp-discord", "udp-bypass", "udp-gbps":
-		packetSize := 130
+		packetSize := 128
 		srcClassMode := false
 
 		if mode == "udp-gbps" {
