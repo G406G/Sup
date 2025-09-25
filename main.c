@@ -531,7 +531,7 @@ void* tcp_raw_worker(void* arg) {
 
 void print_banner() {
     printf(" Raw Netw0rk🔥🔥 ");
-    printf("by darkslayer6967420")
+    printf("by darkslayer6967420");
 
 }
 
